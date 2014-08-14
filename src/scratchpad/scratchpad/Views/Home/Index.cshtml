@@ -1,7 +1,17 @@
-﻿@{
+﻿@model scratchpad.Models.TestUser
+
+@{
     ViewBag.Title = "Home Page";
 }
 
 <div>
     <h>@ViewBag.Title</h>
 </div>
+@{
+    Html.BeginForm("Index");
+    {
+        Html.EditorForModel();
+    }
+    Html.EndForm();
+}
+
