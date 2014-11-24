@@ -1,0 +1,11 @@
+﻿@model scratchpad.Models.ExpressCheckout
+
+@{
+    ViewBag.Title = "Confirm";
+}
+
+<h2>@ViewBag.Title</h2>
+
+@Html.DisplayForModel()
+
+@Html.ActionLink("Confirm?", "PayPalConfirmed", new { token = @Model.Token, payerId = @Model.UserDetails.PayerId })
