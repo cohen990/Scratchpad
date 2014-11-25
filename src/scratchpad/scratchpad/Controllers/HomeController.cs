@@ -10,12 +10,10 @@
     public class HomeController : Controller
     {
         private readonly PayPalService _service;
-        private readonly HttpClient _client;
 
         public HomeController()
         {
-            _service = new PayPalService(true);
-            _client = new HttpClient();
+            _service = new PayPalService();
         }
 
         public ActionResult Index()
@@ -25,11 +23,11 @@
 
         public async Task<ActionResult> GoToPayPal()
         {
-            var checkout = await _service.SetExpressCheckoutAsync(_client);
+            var checkout = await _service.SetExpressCheckoutAsync();
 
             var payPalUri =
                 string.Format("https://www.sandbox.paypal.com/cgi-bin/webscr?cmd=_express-checkout&token={0}",
-                    checkout.Token);
+                    checkout.Data.Token);
 
             return Redirect(payPalUri);
         }
@@ -41,9 +39,9 @@
             if (string.IsNullOrEmpty(payerId))
                 throw new ArgumentNullException("payerId");
 
-            var checkout = await _service.GetExpressCheckoutDetailsAsync(_client, token);
+            var checkout = await _service.GetExpressCheckoutDetailsAsync(token);
 
-            return View(checkout);
+            return View(checkout.Data);
         }
 
         public async Task<ActionResult> PayPalConfirmed(string token, string payerId)
@@ -53,7 +51,7 @@
             if (string.IsNullOrEmpty(payerId))
                 throw new ArgumentNullException("payerId");
 
-            await _service.DoExpressCheckoutPaymentAsync(_client, token, payerId);
+            await _service.DoExpressCheckoutPaymentAsync(token, payerId);
 
             return View();
         }
