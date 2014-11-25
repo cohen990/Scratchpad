@@ -2,8 +2,10 @@
 
 namespace scratchpad.Controllers
 {
-    using System.Net.Http;
+    using System;
+    using System.Linq;
     using System.Threading.Tasks;
+    using Models;
     using Services;
 
     public class PermissionsController : Controller
@@ -12,7 +14,7 @@ namespace scratchpad.Controllers
 
         public PermissionsController()
         {
-            _service = new PayPalService(true);
+            _service = new PayPalService();
         }
 
         // GET: Permissinos
@@ -21,16 +23,32 @@ namespace scratchpad.Controllers
             return View();
         }
 
-        public async Task<RedirectResult> RequestPermissions()
+        public async Task<ActionResult> RequestPermissions()
         {
-            var result = await _service.RequestPermissions();
+            InteractionModel<PermissionsServiceModel> result = await _service.RequestPermissions();
 
-            const string token = "hello";
+            if (!result.IsSuccessful)
+            {
+                ModelState.AddModelError("0", result.Errors.FirstOrDefault());
+                return View(result.Data);
+            }
 
             return
                 Redirect(string.Format(
                     "https://www.sandbox.paypal.com/cgi-bin/webscr?cmd=_grant-permission&request_token={0}",
-                    token));
+                    result.Data.Token));
+        }
+
+        public async Task<ActionResult> Success(string request_token, string verification_code)
+        {
+            if (string.IsNullOrEmpty(request_token))
+                throw new ArgumentNullException("request_token");
+            if (string.IsNullOrEmpty(verification_code))
+                throw new ArgumentNullException("verification_code");
+
+            await _service.GetAccessToken(request_token, verification_code);
+
+            return View();
         }
     }
 }
