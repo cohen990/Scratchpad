@@ -10,11 +10,11 @@ namespace scratchpad.Controllers
 
     public class PermissionsController : Controller
     {
-        private readonly PayPalService _service;
+        private readonly PermissionsService _service;
 
         public PermissionsController()
         {
-            _service = new PayPalService();
+            _service = new PermissionsService();
         }
 
         // GET: Permissinos
@@ -46,9 +46,15 @@ namespace scratchpad.Controllers
             if (string.IsNullOrEmpty(verification_code))
                 throw new ArgumentNullException("verification_code");
 
-            await _service.GetAccessToken(request_token, verification_code);
+            var result = await _service.GetAccessToken(request_token, verification_code);
 
-            return View();
+            if (!result.IsSuccessful)
+            {
+                ModelState.AddModelError("0", result.Errors.FirstOrDefault());
+                return View(result.Data);
+            }
+
+            return View(result.Data);
         }
     }
 }

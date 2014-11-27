@@ -3,7 +3,7 @@
 namespace scratchpad.Models
 {
 
-    public class PaymentRequest : PayPalDataModel
+    public class PaymentRequest : PayPalDataModel<PaymentRequest>
     {
         public string CurrencyCode { get; set; }
 
@@ -23,7 +23,7 @@ namespace scratchpad.Models
 
         public string ErrorCode { get; set; }
 
-        public override void InitializeFromDict(Dictionary<string, string> dict)
+        protected override void InitializeFromDictionary(Dictionary<string, string> dict)
         {
             CurrencyCode = TryGetValue(dict, "PAYMENTREQUEST_0_CURRENCYCODE");
             Amt = TryGetValue(dict, "PAYMENTREQUEST_0_AMT");

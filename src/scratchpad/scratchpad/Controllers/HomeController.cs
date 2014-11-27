@@ -9,11 +9,11 @@
 
     public class HomeController : Controller
     {
-        private readonly PayPalService _service;
+        private readonly ExpressCheckoutService _service;
 
         public HomeController()
         {
-            _service = new PayPalService();
+            _service = new ExpressCheckoutService();
         }
 
         public ActionResult Index()
