@@ -4,7 +4,6 @@
     using System.Net.Http;
     using System.Threading.Tasks;
     using System.Web.Mvc;
-    using Models;
     using Services;
 
     public class HomeController : Controller
@@ -13,7 +12,7 @@
 
         public HomeController()
         {
-            _service = new ExpressCheckoutService();
+            _service = new ExpressCheckoutService(new HttpClient());
         }
 
         public ActionResult Index()

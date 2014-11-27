@@ -9,9 +9,7 @@ namespace scratchpad.Services
     using System;
     using System.Collections.Generic;
     using System.Linq;
-    using System.Net;
     using System.Net.Http;
-    using System.Text;
     using System.Threading.Tasks;
     using Models;
     using PayPal.Authentication;
@@ -23,16 +21,25 @@ namespace scratchpad.Services
     /// </summary>
     public class ExpressCheckoutService : PayPalService
     {
+        /// <summary>
+        /// The path on disk of the Access Token.
+        /// </summary>
         private const string AccessTokenPath = @"C:\Users\Dan\Documents\GitHub\scratchpad\src\scratchpad\scratchpad\" +
                                                 @"Services\AccessToken.txt";
 
         /// <summary>
-        /// The <see cref="HttpClient"/>.
+        /// The <see cref="TokenAuthorization"/>.
         /// </summary>
-        private readonly HttpClient _client;
+        private readonly TokenAuthorization _authorization;
 
+        /// <summary>
+        /// The <see cref="SignatureCredential"/>.
+        /// </summary>
         private readonly SignatureCredential _credential;
 
+        /// <summary>
+        /// The <see cref="SignatureHttpHeaderAuthStrategy"/>
+        /// </summary>
         private readonly SignatureHttpHeaderAuthStrategy _authStrategy;
 
         /// <summary>
@@ -50,14 +57,22 @@ namespace scratchpad.Services
         /// </summary>
         private readonly string _payPalCancelUri;
 
+        /// <summary>
+        /// The api version being used.
+        /// </summary>
         private readonly string _apiVersion;
+
+        /// <summary>
+        /// The email of the client we are acting as a third party for.
+        /// </summary>
+        private readonly string _subjectEmail;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="ExpressCheckoutService"/> class.
         /// </summary>
-        public ExpressCheckoutService()
+        public ExpressCheckoutService(HttpClient client) : base(client)
         {
-            _client = new HttpClient();
+            _authorization = GetTokenAuthorization();
 
             //// Team Marvel facilitator Credentials
             //const string user = "team-marvel-facilitator_api1.mopowered.co.uk";
@@ -71,10 +86,11 @@ namespace scratchpad.Services
 
             _payPalCancelUri = "http://localhost:59709/Forzieri/Payment/PayPalCancelled";
             _payPalSuccessUri = "http://localhost:6945/Home/PayPalSuccess";
-            _endpoint = GetEndpoint();
+            _endpoint = GetExpressCheckoutEndpointEndpoint();
             _apiVersion = "119";
             _credential = new SignatureCredential(user, password, signature);
-            _authStrategy = new SignatureHttpHeaderAuthStrategy(GetEndpoint().ToString());
+            _authStrategy = new SignatureHttpHeaderAuthStrategy(GetExpressCheckoutEndpointEndpoint().ToString());
+            _subjectEmail = "team-marvel-facilitator@mopowered.co.uk";
         }
 
         /// <summary>
@@ -91,15 +107,16 @@ namespace scratchpad.Services
             if (string.IsNullOrEmpty(payerId))
                 throw new ArgumentNullException("payerId");
 
-            var queryParams = string.Format(
+            string queryParams = string.Format(
                 "USER={0}&PWD={1}&SIGNATURE={2}&VERSION={3}&METHOD=DoExpressCheckoutPayment&TOKEN={4}&PAYERID={5}" +
-                    "&PAYMENTREQUEST_0_AMT=19.00",
+                    "&PAYMENTREQUEST_0_AMT=19.00&SUBJECT={6}",
                 _credential.UserName,
                 _credential.Password,
                 _credential.Signature,
                 _apiVersion,
                 token,
-                payerId);
+                payerId,
+                _subjectEmail);
 
             var requestUri = new UriBuilder(_endpoint) { Query = queryParams };
 
@@ -120,12 +137,13 @@ namespace scratchpad.Services
                 throw new ArgumentNullException("token");
 
             var queryParams = string.Format(
-                "USER={0}&PWD={1}&SIGNATURE={2}&VERSION={3}&METHOD=GetExpressCheckoutDetails&TOKEN={4}",
+                "USER={0}&PWD={1}&SIGNATURE={2}&VERSION={3}&METHOD=GetExpressCheckoutDetails&TOKEN={4}&SUBJECT={5}",
                 _credential.UserName,
                 _credential.Password,
                 _credential.Signature,
                 _apiVersion,
-                token);
+                token,
+                _subjectEmail);
 
             var requestUri = new UriBuilder(_endpoint) { Query = queryParams };
 
@@ -141,11 +159,6 @@ namespace scratchpad.Services
         /// <returns>An <see cref="InteractionModel{ExpressCheckout}"/>.</returns>
         public async Task<InteractionModel<ExpressCheckout>> SetExpressCheckoutAsync()
         {
-            var authorization = GetThirdPartyAuthentication();
-
-            Dictionary<string, string> headerStrategy =
-                _authStrategy.GenerateHeaderStrategy(new SignatureCredential("username", "password", "sign",
-                    authorization));
 
             var queryParams = string.Format(
                 "USER={0}&PWD={1}&SIGNATURE={2}&METHOD=SetExpressCheckout&VERSION={3}&" +
@@ -157,109 +170,46 @@ namespace scratchpad.Services
                 _apiVersion,
                 _payPalCancelUri,
                 _payPalSuccessUri,
-                "team-marvel-facilitator@mopowered.co.uk");
+                _subjectEmail);
 
             var requestUri = new UriBuilder(_endpoint) { Query = queryParams };
 
-            var result = await CallExpressCheckoutApiAsync(requestUri.Uri, headerStrategy);
+            var result = await CallExpressCheckoutApiAsync(requestUri.Uri);
 
             return result;
         }
 
+        /// <summary>
+        /// This method processes the <c>API</c> call.
+        /// </summary>
+        /// <param name="apiUri">The Uri (with all query parameters included)</param>
+        /// <param name="successIndicator">The string which will indicate a successful <c>API</c> interaction.</param>
+        /// <returns>
+        /// An <see cref="InteractionModel{ExpressCheckout}"/> containing the data relevant to the <c>API</c> call.
+        /// </returns>
         private async Task<InteractionModel<ExpressCheckout>> CallExpressCheckoutApiAsync(
             Uri apiUri,
-            Dictionary<string, string> headers = null)
+            string successIndicator = "ACK=Success")
         {
-            var response = await CallApiWithHeadersAsync(apiUri, HttpMethod.Get, headers);
+            var headerStrategy =
+                _authStrategy.GenerateHeaderStrategy(new SignatureCredential(_credential.UserName, _credential.Password,
+                    _credential.Signature, _authorization));
 
-            if (!response.IsSuccessful)
+            var response = await CallApiWithHeadersAsync(apiUri, HttpMethod.Get, headerStrategy);
+
+            if (response.IsSuccessful && response.Data.Contains(successIndicator))
             {
-                return InteractionModel<ExpressCheckout>.Failure(response.Errors);
+                var result = GetSuccessfulApiModel<ExpressCheckout>(response.Data);
+                return InteractionModel<ExpressCheckout>.Successful(result);
             }
 
-            if (response.Data.Contains("ACK=SuccessWithWarning"))
-            {
-                return GetModelWithWarning(response.Data);
-            }
+            string exceptionMessage = "There has been an error making the request to paypal.";
 
-            if (response.Data.Contains("ACK=Success"))
-            {
-                return GetSuccessfulModel(response.Data);
-            }
-
-            string exceptionMessage = string.Format(
-                "There has been an error making the request to paypal. The API response was '{0}'",
-                Uri.UnescapeDataString(response.Data));
+            exceptionMessage += response.Data != null
+                ? string.Format(" The API response was '{0}'", Uri.UnescapeDataString(response.Data))
+                : " The API call recieved no reponse.";
 
             return InteractionModel<ExpressCheckout>.Failure(exceptionMessage);
-        }
-
-        public async Task<InteractionModel<string>> CallApiWithHeadersAsync(
-            Uri apiUri,
-            HttpMethod method,
-            Dictionary<string, string> headers = null,
-            string payload = null)
-        {
-            var request = new HttpRequestMessage(method, apiUri);
-            if (method == HttpMethod.Post)
-            {
-                request.Content = new StringContent(payload ?? string.Empty, Encoding.UTF8,
-                    "application/x-www-form-urlencoded");
-            }
-
-
-            if (headers != null)
-            {
-                foreach (var header in headers)
-                {
-                    request.Headers.Add(header.Key, header.Value);
-                }
-            }
-
-            var response = await _client.SendAsync(request);
-
-            var responseContent = await response.Content.ReadAsStringAsync();
-
-            if (string.IsNullOrEmpty(responseContent))
-            {
-                return InteractionModel<string>.Failure("The api call has failed.");
-            }
-
-            return InteractionModel<string>.Successful(responseContent);
-        }
-
-        /// <summary>
-        /// Gets a successful <see cref="InteractionModel{ExpressCheckout}"/>.
-        /// </summary>
-        /// <param name="responseContent">The <see cref="string"/> containing the response of the API call.</param>
-        /// <returns>A successful <see cref="InteractionModel{ExpressCheckout}"/>.</returns>
-        private InteractionModel<ExpressCheckout> GetSuccessfulModel(string responseContent)
-        {
-            var responseDictionary = NvpToDictionary(responseContent);
-
-            var checkout = ExpressCheckout.InitializeFromDict(responseDictionary);
-
-            return InteractionModel<ExpressCheckout>.Successful(checkout);
-        }
-
-        /// <summary>
-        /// Gets a failed <see cref="InteractionModel{ExpressCheckout}"/> with the error message being the warning
-        /// message returned by the API (or, if this is missing, a default error message).
-        /// </summary>
-        /// <param name="responseContent">The <see cref="string"/> containing the response of the API call.</param>
-        /// <returns>A failed <see cref="InteractionModel{ExpressCheckout}"/>.</returns>
-        private InteractionModel<ExpressCheckout> GetModelWithWarning(string responseContent)
-        {
-            Dictionary<string, string> responseDictionary = NvpToDictionary(responseContent);
-
-            string warningMessage;
-            responseDictionary.TryGetValue("L_LONG_MESSAGE", out warningMessage);
-
-            warningMessage = string.IsNullOrEmpty(warningMessage)
-                ? "The API has returned a warning"
-                : warningMessage;
-
-            return InteractionModel<ExpressCheckout>.Failure(warningMessage);
         }
 
         /// <summary>
@@ -270,7 +220,7 @@ namespace scratchpad.Services
         /// Either <c>https://api-3t.sandbox.paypal.com/nvp</c> if this is a test transaction
         /// or <c>https://api-3t.paypal.com/nvp</c> if it is a real transaction.
         /// </returns>
-        private Uri GetEndpoint()
+        private Uri GetExpressCheckoutEndpointEndpoint()
         {
             var isTest = true;
 
@@ -282,13 +232,17 @@ namespace scratchpad.Services
             return new Uri("https://api-3t.paypal.com/nvp");
         }
 
-
-        private TokenAuthorization GetThirdPartyAuthentication()
+        /// <summary>
+        /// Gets the third party authentication token and secret.
+        /// </summary>
+        /// <returns>A <see cref="TokenAuthorization"/>.</returns>
+        private TokenAuthorization GetTokenAuthorization()
         {
             List<string> lines = System.IO.File.ReadAllLines(AccessTokenPath).ToList();
 
             if (lines.Count != 1)
-                throw new InvalidOperationException("The data in the access token file is missing or incorrectly formatted.");
+                throw new InvalidOperationException(
+                    "The data in the access token file is missing or incorrectly formatted.");
 
             var line = lines.Single();
 
@@ -301,6 +255,5 @@ namespace scratchpad.Services
 
             return result;
         }
-        // Define other methods and classes here
     }
 }
