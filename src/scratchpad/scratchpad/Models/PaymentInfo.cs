@@ -2,7 +2,7 @@
 {
     using System.Collections.Generic;
 
-    public class PaymentInfo : PayPalDataModel
+    public class PaymentInfo : PayPalDataModel<PaymentInfo>
     {
         public string TransactionId { get; set; }
 
@@ -34,7 +34,7 @@
 
         public string Ack { get; set; }
 
-        public override void InitializeFromDict(Dictionary<string, string> dict)
+        protected override void InitializeFromDictionary(Dictionary<string, string> dict)
         {
             TransactionId = TryGetValue(dict, "PAYMENTINFO_0_TRANSACTIONID");
             TransactionType = TryGetValue(dict, "PAYMENTINFO_0_TRANSACTIONTYPE");

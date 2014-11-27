@@ -3,7 +3,7 @@
 namespace scratchpad.Models
 {
 
-    public class UserDetails : PayPalDataModel
+    public class UserDetails : PayPalDataModel<UserDetails>
     {
         public string Email { get; set; }
         public string PayerId { get; set; }
@@ -19,7 +19,7 @@ namespace scratchpad.Models
         public string ShipToCountryName { get; set; }
         public string AddressStatus { get; set; }
 
-        public override void InitializeFromDict(Dictionary<string, string> dict)
+        protected override void InitializeFromDictionary(Dictionary<string, string> dict)
         {
             Email = TryGetValue(dict, "EMAIL");
             PayerId = TryGetValue(dict, "PAYERID");

@@ -3,7 +3,7 @@
     using System;
     using System.Collections.Generic;
 
-    public class ExpressCheckout : PayPalDataModel
+    public class ExpressCheckout : PayPalDataModel<ExpressCheckout>
     {
         public string Token { get; set; }
 
@@ -41,7 +41,7 @@
 
         public PaymentInfo PaymentInfo { get; set; }
 
-        public override void InitializeFromDict(Dictionary<string, string> dict)
+        protected override void InitializeFromDictionary(Dictionary<string, string> dict)
         {
             if (dict == null)
                 throw new ArgumentNullException("dict");
@@ -62,14 +62,11 @@
             InsuranceAmt = TryGetValue(dict, "INSURANCEAMT");
             ShipDiscAmt = TryGetValue(dict, "SHIPDISCAMT");
 
-            PaymentRequest = new PaymentRequest();
-            PaymentRequest.InitializeFromDict(dict);
+            PaymentRequest = PaymentRequest.InitializeFromDict(dict);
 
-            PaymentInfo = new PaymentInfo();
-            PaymentInfo.InitializeFromDict(dict);
+            PaymentInfo = PaymentInfo.InitializeFromDict(dict);
 
-            UserDetails = new UserDetails();
-            UserDetails.InitializeFromDict(dict);
+            UserDetails = UserDetails.InitializeFromDict(dict);
         }
     }
 }
