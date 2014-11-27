@@ -4,6 +4,7 @@ namespace scratchpad.Controllers
 {
     using System;
     using System.Linq;
+    using System.Net.Http;
     using System.Threading.Tasks;
     using Models;
     using Services;
@@ -14,7 +15,7 @@ namespace scratchpad.Controllers
 
         public PermissionsController()
         {
-            _service = new PermissionsService();
+            _service = new PermissionsService(new HttpClient());
         }
 
         // GET: Permissinos
@@ -25,7 +26,7 @@ namespace scratchpad.Controllers
 
         public async Task<ActionResult> RequestPermissions()
         {
-            InteractionModel<PermissionsServiceModel> result = await _service.RequestPermissions();
+            InteractionModel<PermissionsServiceModel> result = await _service.RequestPermissionsAsync();
 
             if (!result.IsSuccessful)
             {
@@ -46,7 +47,7 @@ namespace scratchpad.Controllers
             if (string.IsNullOrEmpty(verification_code))
                 throw new ArgumentNullException("verification_code");
 
-            var result = await _service.GetAccessToken(request_token, verification_code);
+            var result = await _service.GetAccessTokenAsync(request_token, verification_code);
 
             if (!result.IsSuccessful)
             {

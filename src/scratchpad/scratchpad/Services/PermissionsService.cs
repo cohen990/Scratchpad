@@ -4,36 +4,35 @@ namespace scratchpad.Services
     using System.Collections.Generic;
     using System.Net.Http;
     using System.Net.Http.Headers;
-    using System.Text;
     using System.Threading.Tasks;
     using Models;
 
     public class PermissionsService : PayPalService
     {
+        /// <summary>
+        /// The path of the file containing the access token.
+        /// </summary>
         private const string AccessTokenPath = @"C:\Users\Dan\Documents\GitHub\scratchpad\src\scratchpad\scratchpad\" +
                                                 @"Services\AccessToken.txt";
 
-        private PermissionsServiceModel GetPermissionServiceModel(string responseContent)
+        /// <summary>
+        /// Initializes a new instance of the <see cref="PermissionsService"/> class.
+        /// </summary>
+        /// <param name="client"></param>
+        public PermissionsService(HttpClient client): base(client)
         {
-            var dict = NvpToDictionary(responseContent);
-
-            var result = PermissionsServiceModel.InitializeFromDict(dict);
-
-            return result;
         }
 
-        private readonly HttpClient _client;
-
-        public PermissionsService()
+        /// <summary>
+        /// Calls RequestPermissions from the PayPal Permissions API.
+        /// <c>https://developer.paypal.com/docs/classic/api/permissions/RequestPermissions_API_Operation/</c>
+        /// </summary>
+        /// <returns>
+        /// An <see cref="InteractionModel{PermissionsServiceModel}"/> containing information relevant to the
+        /// <c>API</c> call.
+        /// </returns>
+        public async Task<InteractionModel<PermissionsServiceModel>> RequestPermissionsAsync()
         {
-            _client = new HttpClient();
-        }
-
-        public async Task<InteractionModel<PermissionsServiceModel>> RequestPermissions()
-        {
-            var client = new HttpClient();
-            client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-
             var endPoint = new UriBuilder("https://svcs.sandbox.paypal.com/Permissions/RequestPermissions");
 
             const string callback = "http://localhost:6945/Permissions/Success";
@@ -41,51 +40,46 @@ namespace scratchpad.Services
             const string payload = "{\"scope\":\"EXPRESS_CHECKOUT\", \"callback\":\"" + callback +
                                    "\",  \"requestEnvelope\": {\"errorLanguage\":\"en_US\"}}";
 
-
-            var request = new HttpRequestMessage(HttpMethod.Post, endPoint.Uri)
+            const string globalSandboxTestId = "APP-80W284485P519543T";
+            var headersDictionary = new Dictionary<string, string>
             {
-                Content = new StringContent(payload, Encoding.UTF8, "application/x-www-form-urlencoded")
+                // Sandbox API credentials for the API Caller account
+                {"X-PAYPAL-SECURITY-USERID", "team-marvel-third-party_api1.mopowered.co.uk"},
+                {"X-PAYPAL-SECURITY-PASSWORD", "ZLYCW77K5ZU3P9Q7"},
+                {"X-PAYPAL-SECURITY-SIGNATURE", "AFcWxV21C7fd0v3bYYYRCpSSRl31ARl8V.b3gXLlfbYuOseHqi0nkGSV"},
+                // Sandbox Application ID
+                {"X-PAYPAL-APPLICATION-ID", globalSandboxTestId},
+                // Input and output formats
+                {"X-PAYPAL-REQUEST-DATA-FORMAT", "JSON"},
+                {"X-PAYPAL-RESPONSE-DATA-FORMAT", "NV"},
             };
 
-            // Sandbox API credentials for the API Caller account
-            request.Content.Headers.Add("X-PAYPAL-SECURITY-USERID", "team-marvel-third-party_api1.mopowered.co.uk");
-            request.Content.Headers.Add("X-PAYPAL-SECURITY-PASSWORD", "ZLYCW77K5ZU3P9Q7");
-            request.Content.Headers.Add("X-PAYPAL-SECURITY-SIGNATURE", "AFcWxV21C7fd0v3bYYYRCpSSRl31ARl8V.b3gXLlfbYuOseHqi0nkGSV");
+            var response = await CallApiWithHeadersAsync(endPoint.Uri, HttpMethod.Post, headersDictionary, payload);
 
-            // Sandbox Application ID
-            const string globalSandboxTestId = "APP-80W284485P519543T";
-            request.Content.Headers.Add("X-PAYPAL-APPLICATION-ID", globalSandboxTestId);
-
-            // Input and output formats
-            request.Content.Headers.Add("X-PAYPAL-REQUEST-DATA-FORMAT", "JSON");
-            request.Content.Headers.Add("X-PAYPAL-RESPONSE-DATA-FORMAT", "NV");
-
-            var response = await _client.SendAsync(request);
-
-            var responseContent = await response.Content.ReadAsStringAsync();
-
-            var resultDict = NvpToDictionary(responseContent);
-
-            if (responseContent.Contains("ack=Success"))
+            if (!response.IsSuccessful)
             {
-                var result = PermissionsServiceModel.InitializeFromDict(resultDict);
-
-                return InteractionModel<PermissionsServiceModel>.Successful(result);
+                return InteractionModel<PermissionsServiceModel>.Failure(response.Errors);
             }
 
-            Dictionary<string, string> responseDictionary = NvpToDictionary(responseContent);
-
-            string warningMessage;
-            responseDictionary.TryGetValue("error(0).message", out warningMessage);
-
-            warningMessage = string.IsNullOrEmpty(warningMessage)
-                ? "The API has returned a warning"
-                : warningMessage;
-
-            return InteractionModel<PermissionsServiceModel>.Failure(warningMessage);
+            var result = GetSuccessfulApiModel<PermissionsServiceModel>(response.Data);
+            return InteractionModel<PermissionsServiceModel>.Successful(result);
         }
 
-        public async Task<InteractionModel<PermissionsServiceModel>> GetAccessToken(string requestToken, string verificationCode)
+        /// <summary>
+        /// Calls the GetAccessToken from the PayPal Permissions Service.
+        /// <c>https://developer.paypal.com/docs/classic/api/permissions/GetAccessToken_API_Operation/</c>
+        /// </summary>
+        /// <param name="requestToken">
+        /// The token appended as a query string to the callback URI after returning from paypal.
+        /// </param>
+        /// <param name="verificationCode">
+        /// The verification code appended as a query string to the callback URI after returning from paypal.
+        /// </param>
+        /// <returns>
+        /// An <see cref="InteractionModel{PermissionServiceModel}"/> containing information relevant to the <c>API</c>
+        /// call and the authorization token and secret.
+        /// </returns>
+        public async Task<InteractionModel<PermissionsServiceModel>> GetAccessTokenAsync(string requestToken, string verificationCode)
         {
             var client = new HttpClient();
             client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
@@ -95,49 +89,37 @@ namespace scratchpad.Services
             string payload = "{\"requestEnvelope\":{\"errorLanguage\":\"en_US\"},\"token\":\"" + requestToken +
                              "\",\"verifier\":\"" + verificationCode + "\"}";
 
-
-            var request = new HttpRequestMessage(HttpMethod.Post, endPoint)
+            const string globalSandboxTestId = "APP-80W284485P519543T";
+            var headersDictionary = new Dictionary<string, string>
             {
-                Content = new StringContent(payload, Encoding.UTF8, "application/x-www-form-urlencoded")
+                {"X-PAYPAL-SECURITY-USERID", "team-marvel-third-party_api1.mopowered.co.uk"},
+                {"X-PAYPAL-SECURITY-PASSWORD", "ZLYCW77K5ZU3P9Q7"},
+                {"X-PAYPAL-SECURITY-SIGNATURE", "AFcWxV21C7fd0v3bYYYRCpSSRl31ARl8V.b3gXLlfbYuOseHqi0nkGSV"},
+                {"X-PAYPAL-APPLICATION-ID", globalSandboxTestId},
+                {"X-PAYPAL-REQUEST-DATA-FORMAT", "JSON"},
+                {"X-PAYPAL-RESPONSE-DATA-FORMAT", "NV"}
             };
 
-            // Sandbox API credentials for the API Caller account
-            request.Content.Headers.Add("X-PAYPAL-SECURITY-USERID", "team-marvel-third-party_api1.mopowered.co.uk");
-            request.Content.Headers.Add("X-PAYPAL-SECURITY-PASSWORD", "ZLYCW77K5ZU3P9Q7");
-            request.Content.Headers.Add("X-PAYPAL-SECURITY-SIGNATURE", "AFcWxV21C7fd0v3bYYYRCpSSRl31ARl8V.b3gXLlfbYuOseHqi0nkGSV");
+            var response = await CallApiWithHeadersAsync(endPoint, HttpMethod.Post, headersDictionary, payload);
 
-            // Sandbox Application ID
-            const string globalSandboxTestId = "APP-80W284485P519543T";
-            request.Content.Headers.Add("X-PAYPAL-APPLICATION-ID", globalSandboxTestId);
-
-            // Input and output formats
-            request.Content.Headers.Add("X-PAYPAL-REQUEST-DATA-FORMAT", "JSON");
-            request.Content.Headers.Add("X-PAYPAL-RESPONSE-DATA-FORMAT", "NV");
-
-            var response = await _client.SendAsync(request);
-
-            var responseContent = await response.Content.ReadAsStringAsync();
-
-            if (!responseContent.Contains("error(0)"))
+            if (!response.IsSuccessful)
             {
-                var result = GetPermissionServiceModel(responseContent);
-
-                WriteTokenToFile(result.Token, result.Secret);
-
-                return InteractionModel<PermissionsServiceModel>.Successful(result);
+                return InteractionModel<PermissionsServiceModel>.Failure(response.Errors);
             }
 
-            var responseDict = NvpToDictionary(responseContent);
+            var result = GetSuccessfulApiModel<PermissionsServiceModel>(response.Data);
 
-            const string errorMessageKey = "error(0).message";
-            string errorMessage = responseDict.ContainsKey(errorMessageKey)
-                ? responseDict[errorMessageKey]
-                : "There has been a problem getting the authentication key from paypal.";
+            StoreAuthorization(result.Token, result.Secret);
 
-            return InteractionModel<PermissionsServiceModel>.Failure(errorMessage);
+            return InteractionModel<PermissionsServiceModel>.Successful(result);
         }
 
-        private void WriteTokenToFile(string token, string secret)
+        /// <summary>
+        /// Stores the access token and secret.
+        /// </summary>
+        /// <param name="token">The authorization token.</param>
+        /// <param name="secret">The authorization secret.</param>
+        private void StoreAuthorization(string token, string secret)
         {
             var fileContent = string.Format("Token={0}&Secret={1}", token, secret);
 
