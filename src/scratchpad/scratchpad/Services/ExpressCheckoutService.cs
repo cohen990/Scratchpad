@@ -10,6 +10,7 @@ namespace scratchpad.Services
     using System.Collections.Generic;
     using System.Linq;
     using System.Net.Http;
+    using System.Text;
     using System.Threading.Tasks;
     using Models;
     using PayPal.Authentication;
@@ -19,8 +20,13 @@ namespace scratchpad.Services
     /// The class for interacting with the <c>PayPal</c> <c>NVP</c> <c>API</c>.
     /// <c>https://developer.paypal.com/docs/classic/api/NVPAPIOverview/</c>
     /// </summary>
-    public class ExpressCheckoutService : PayPalService
+    public class ExpressCheckoutService
     {
+        /// <summary>
+        /// The <see cref="HttpClient"/>.
+        /// </summary>
+        private readonly HttpClient _client;
+
         /// <summary>
         /// The path on disk of the Access Token.
         /// </summary>
@@ -70,9 +76,10 @@ namespace scratchpad.Services
         /// <summary>
         /// Initializes a new instance of the <see cref="ExpressCheckoutService"/> class.
         /// </summary>
-        public ExpressCheckoutService(HttpClient client) : base(client)
+        public ExpressCheckoutService(HttpClient client)
         {
             _authorization = GetTokenAuthorization();
+            _client = client;
 
             //// Team Marvel facilitator Credentials
             //const string user = "team-marvel-facilitator_api1.mopowered.co.uk";
@@ -86,10 +93,10 @@ namespace scratchpad.Services
 
             _payPalCancelUri = "http://localhost:59709/Forzieri/Payment/PayPalCancelled";
             _payPalSuccessUri = "http://localhost:6945/Home/PayPalSuccess";
-            _endpoint = GetExpressCheckoutEndpointEndpoint();
+            _endpoint = GetExpressCheckoutEndpoint();
             _apiVersion = "119";
             _credential = new SignatureCredential(user, password, signature);
-            _authStrategy = new SignatureHttpHeaderAuthStrategy(GetExpressCheckoutEndpointEndpoint().ToString());
+            _authStrategy = new SignatureHttpHeaderAuthStrategy(GetExpressCheckoutEndpoint().ToString());
             _subjectEmail = "team-marvel-facilitator@mopowered.co.uk";
         }
 
@@ -159,7 +166,7 @@ namespace scratchpad.Services
         /// <returns>An <see cref="InteractionModel{ExpressCheckout}"/>.</returns>
         public async Task<InteractionModel<ExpressCheckout>> SetExpressCheckoutAsync()
         {
-
+            // TODO: Replace hardcoded prices and currencies with assignable parameters.
             var queryParams = string.Format(
                 "USER={0}&PWD={1}&SIGNATURE={2}&METHOD=SetExpressCheckout&VERSION={3}&" +
                     "PAYMENTREQUEST_0_PAYMENTACTION=SALE&PAYMENTREQUEST_0_AMT=19&" +
@@ -220,7 +227,7 @@ namespace scratchpad.Services
         /// Either <c>https://api-3t.sandbox.paypal.com/nvp</c> if this is a test transaction
         /// or <c>https://api-3t.paypal.com/nvp</c> if it is a real transaction.
         /// </returns>
-        private Uri GetExpressCheckoutEndpointEndpoint()
+        private Uri GetExpressCheckoutEndpoint()
         {
             var isTest = true;
 
@@ -254,6 +261,90 @@ namespace scratchpad.Services
             var result = new TokenAuthorization(token, secret);
 
             return result;
+        }
+
+        /// <summary>
+        /// Unescapes and converts the <c>NVP</c> response of the <c>API</c> into a dictionary.
+        /// </summary>
+        /// <param name="nvpInput">The <c>NVP</c> response of an <c>API</c> call.</param>
+        /// <returns>
+        /// A <see cref="Dictionary{TKey,TValue}"/> containing the Names as Keys and the Values as Values.
+        /// </returns>
+        protected Dictionary<string, string> NvpToDictionary(string nvpInput)
+        {
+            if (string.IsNullOrEmpty(nvpInput))
+                throw new ArgumentNullException("nvpInput");
+
+            var nameValuePairs = nvpInput.Split('&');
+
+            Dictionary<string, string> result = nameValuePairs.Select(pair => pair.Split('='))
+                .ToDictionary(
+                    splitPair => Uri.UnescapeDataString(splitPair[0]),
+                    splitPair => Uri.UnescapeDataString(splitPair[1])
+                );
+
+            return result;
+        }
+
+        protected async Task<InteractionModel<string>> CallApiWithHeadersAsync(
+            Uri apiUri,
+            HttpMethod method,
+            Dictionary<string, string> headers = null,
+            string payload = null)
+        {
+            var request = new HttpRequestMessage(method, apiUri);
+            if (method == HttpMethod.Post)
+            {
+                request.Content = new StringContent(payload ?? string.Empty, Encoding.UTF8,
+                    "application/x-www-form-urlencoded");
+            }
+
+            request = AddHeaders(request, headers);
+
+            var result = await SendRequest(request);
+            return result;
+        }
+
+        private async Task<InteractionModel<string>> SendRequest(HttpRequestMessage request)
+        {
+            var response = await _client.SendAsync(request);
+
+            var responseContent = await response.Content.ReadAsStringAsync();
+
+            if (string.IsNullOrEmpty(responseContent))
+            {
+                return InteractionModel<string>.Failure("The api call has failed.");
+            }
+
+            return InteractionModel<string>.Successful(responseContent);
+        }
+
+        /// <summary>
+        /// Gets a successful <see cref="InteractionModel{ExpressCheckout}"/>.
+        /// </summary>
+        /// <param name="responseContent">The <see cref="string"/> containing the response of the API call.</param>
+        /// <returns>A successful <see cref="InteractionModel{ExpressCheckout}"/>.</returns>
+        protected TData GetSuccessfulApiModel<TData>(string responseContent)
+            where TData : PayPalDataModel<TData>, new()
+        {
+            var responseDictionary = NvpToDictionary(responseContent);
+
+            var result = PayPalDataModel<TData>.InitializeFromDict(responseDictionary);
+
+            return result;
+        }
+
+        private HttpRequestMessage AddHeaders(HttpRequestMessage request, Dictionary<string, string> headers)
+        {
+            if (headers != null)
+            {
+                foreach (var header in headers)
+                {
+                    request.Headers.Add(header.Key, header.Value);
+                }
+            }
+
+            return request;
         }
     }
 }
